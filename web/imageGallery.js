@@ -577,6 +577,42 @@ const styles = `
   transform: translateX(-50%) translateZ(0);
 }
 
+/* Gallery Loading Indicator Spinner */
+.comfy-carousel .gallery-loading-indicator {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px 0;
+  width: 100%;
+  box-sizing: border-box;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+  visibility: hidden;
+}
+
+.comfy-carousel .gallery-loading-indicator.visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.comfy-carousel .gallery-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: var(--cg-accent-primary, #6366f1);
+  border-radius: 50%;
+  animation: gallery-spinner-rotate 0.75s linear infinite;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.25);
+}
+
+@keyframes gallery-spinner-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 /* Gallery Item Container (Hardware-Accelerated Cards) */
 .gallery-item-container {
   position: relative;
@@ -2726,6 +2762,7 @@ class ComfyCarousel extends ComfyDialog {
       this.isLoadingMoreGalleryItems = false;
       this.showLoadingIndicator(false); // Hide loading indicator
       console.log("[Gallery] loadGalleryImages finally block finished.");
+      setTimeout(() => this.checkAutoLoadNextPage(), 100);
     }
     // Return container for potential chaining/reference
     return this.element.querySelector('.gallery-container');
@@ -2752,7 +2789,7 @@ class ComfyCarousel extends ComfyDialog {
           console.log("[Gallery] Loading indicator missing or misplaced. Re-creating/re-appending.");
           loadingIndicator?.remove(); // Remove the old element if it existed
           // Now this reassignment is valid because loadingIndicator is 'let'
-          loadingIndicator = $el("div.gallery-loading-indicator", "Loading...");
+          loadingIndicator = this.createLoadingIndicator();
           galleryContainer.appendChild(loadingIndicator); // Ensure it's at the end
         } else {
           // If it exists and is in the right place, just ensure it's the last child for insertBefore logic
@@ -2894,63 +2931,125 @@ class ComfyCarousel extends ComfyDialog {
     const galleryContainer = this.element.querySelector('.gallery-container');
     const sizeSlider = this.element.querySelector('.gallery-size-slider');
     const galleryButtonContainer = this.element.querySelector('.gallery-button-container');
+
+    if (galleryContainer && this.galleryScrollListener) {
+      galleryContainer.removeEventListener('scroll', this.galleryScrollListener);
+      this.galleryScrollListener = null;
+    }
+    if (this.galleryResizeListener) {
+      window.removeEventListener('resize', this.galleryResizeListener);
+      this.galleryResizeListener = null;
+    }
+    if (this.galleryObserver) {
+      this.galleryObserver.disconnect();
+      this.galleryObserver = null;
+    }
+
     // Remove all gallery-specific elements
     galleryHeaderWrapper?.remove();
     galleryContainer?.remove();
     sizeSlider?.remove();
     galleryButtonContainer?.remove();
-    // Close button (which is now inside the header wrapper, removed with it)
-    // const closeButton = this.element.querySelector('.close-gallery');
-    // closeButton?.remove(); // Not needed if it's inside the wrapper
+
     console.log("[Gallery] Cleared gallery specific UI elements.");
-    // Reset selection mode state - This was already correct, keep it
-    this.isSelectionMode = false;
-    this.lastSelectedIndex = -1;
-    // Reset selection mode state
     this.isSelectionMode = false;
     this.lastSelectedIndex = -1;
   }
+  createLoadingIndicator() {
+    return $el("div.gallery-loading-indicator", [
+      $el("div.gallery-spinner")
+    ]);
+  }
   setupInfiniteScroll(galleryContainer) {
     if (!galleryContainer) return;
-    // Remove potentially existing listener first
+    
     if (this.galleryScrollListener) {
       galleryContainer.removeEventListener('scroll', this.galleryScrollListener);
-      console.log("Removed previous gallery scroll listener.");
-    } else {
-      console.log("Setting up gallery scroll listener.");
     }
-    // UseIntersection Observer is generally better, but scroll works fine too
+    if (this.galleryResizeListener) {
+      window.removeEventListener('resize', this.galleryResizeListener);
+    }
+    if (this.galleryObserver) {
+      this.galleryObserver.disconnect();
+      this.galleryObserver = null;
+    }
+
+    const checkLoad = () => {
+      if (this.isLoadingMoreGalleryItems || this.currentGalleryPage >= this.totalGalleryPages) {
+        return;
+      }
+      const { scrollTop, scrollHeight, clientHeight } = galleryContainer;
+      // Load next page if content fits within height (scrollHeight <= clientHeight) or near bottom
+      if (scrollHeight <= clientHeight || (scrollHeight - scrollTop - clientHeight < clientHeight * 1.5)) {
+        console.log(`[Gallery] Scroll threshold reached. Loading page ${this.currentGalleryPage + 1}`);
+        this.loadGalleryImages(null, this.currentGalleryPage + 1);
+      }
+    };
+
     let scrollTimeout;
     this.galleryScrollListener = () => {
-      if (this.isLoadingMoreGalleryItems || this.currentGalleryPage >= this.totalGalleryPages) {
-        return; // Don't trigger if already loading or all pages loaded
-      }
-      // Throttle the check
       if (scrollTimeout) clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        const { scrollTop, scrollHeight, clientHeight } = galleryContainer;
-        // Load next page if near bottom (e.g., within 2 * clientHeight)
-        if (scrollHeight - scrollTop - clientHeight < clientHeight * 1.5) {
-          console.log(`Scroll threshold reached. Loading page ${this.currentGalleryPage + 1}`);
-          this.loadGalleryImages(null, this.currentGalleryPage + 1); // Load next page
-        }
-      }, 100); // Check roughly 10 times/sec max during scroll
+      scrollTimeout = setTimeout(checkLoad, 100);
     };
-    galleryContainer.addEventListener('scroll', this.galleryScrollListener, { passive: true }); // Use passive listener
+    galleryContainer.addEventListener('scroll', this.galleryScrollListener, { passive: true });
+
+    this.galleryResizeListener = () => {
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(checkLoad, 200);
+    };
+    window.addEventListener('resize', this.galleryResizeListener);
+
+    if ('IntersectionObserver' in window) {
+      this.galleryObserver = new IntersectionObserver((entries) => {
+        const entry = entries[0];
+        if (entry && entry.isIntersecting) {
+          console.log("[Gallery] Loading indicator intersected viewport. Checking next page load.");
+          checkLoad();
+        }
+      }, {
+        root: galleryContainer,
+        rootMargin: '300px 0px',
+        threshold: 0
+      });
+    }
+
+    this.updateObserverTarget(galleryContainer);
+
+    setTimeout(checkLoad, 150);
+  }
+  updateObserverTarget(galleryContainer) {
+    if (!this.galleryObserver || !galleryContainer) return;
+    this.galleryObserver.disconnect();
+    const indicator = galleryContainer.querySelector('.gallery-loading-indicator');
+    if (indicator && this.currentGalleryPage < this.totalGalleryPages) {
+      this.galleryObserver.observe(indicator);
+    }
+  }
+  checkAutoLoadNextPage() {
+    const galleryContainer = this.element?.querySelector('.gallery-container');
+    if (!galleryContainer || this.isLoadingMoreGalleryItems || this.currentGalleryPage >= this.totalGalleryPages) {
+      return;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = galleryContainer;
+    if (scrollHeight <= clientHeight || (scrollHeight - scrollTop - clientHeight < clientHeight * 1.5)) {
+      console.log(`[Gallery] Auto-loading page ${this.currentGalleryPage + 1} (large screen / unfilled container).`);
+      this.loadGalleryImages(null, this.currentGalleryPage + 1);
+    }
   }
   showLoadingIndicator(show) {
     let indicator = this.element.querySelector('.gallery-loading-indicator');
     const galleryContainer = this.element.querySelector('.gallery-container');
     if (show) {
-      if (!indicator && galleryContainer) {
-        indicator = $el("div.gallery-loading-indicator", "Loading...");
-        galleryContainer.appendChild(indicator); // Append if doesn't exist
+      if (!indicator && galleryContainer && this.currentGalleryPage < this.totalGalleryPages) {
+        indicator = this.createLoadingIndicator();
+        galleryContainer.appendChild(indicator);
       }
-      if (indicator) indicator.classList.add('visible');
+      if (indicator) {
+        indicator.classList.add('visible');
+        this.updateObserverTarget(galleryContainer);
+      }
     } else {
       if (indicator) indicator.classList.remove('visible');
-      // Optionally remove the indicator from DOM if desired when not visible
-      // indicator?.remove();
     }
   }
   createBreadcrumb(currentFolder, totalItems) {
@@ -4044,6 +4143,8 @@ class ComfyCarousel extends ComfyDialog {
       // Re-setup scroll listener if necessary
       if (!this.galleryScrollListener) {
         this.setupInfiniteScroll(galleryContainer);
+      } else {
+        this.checkAutoLoadNextPage();
       }
     }
     
