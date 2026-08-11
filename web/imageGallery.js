@@ -4085,17 +4085,20 @@ async function addGalleryButtonToMenu() {
       if (ComfyButtonClass) {
         const galleryBtn = new ComfyButtonClass({
           icon: "image",
-          tooltip: "Image Gallery",
-          content: "Image Gallery",
+          tooltip: "Open Image Gallery",
           action: openGallery,
         });
+        if (galleryBtn.element) {
+          galleryBtn.element.title = "Open Image Gallery";
+        }
         app.menu.settingsGroup.append(galleryBtn);
         window._imageGallerySettingsGroupBtnAdded = true;
         console.log("[ImageGallery] Appended ComfyButton to app.menu.settingsGroup");
       } else {
         const btn = document.createElement("button");
         btn.id = "comfyui-image-gallery-button";
-        btn.textContent = "Image Gallery";
+        btn.textContent = "🖼️";
+        btn.title = "Open Image Gallery";
         btn.onclick = openGallery;
         if (app.menu.settingsGroup.element) {
           app.menu.settingsGroup.element.append(btn);
@@ -4114,7 +4117,7 @@ async function addGalleryButtonToMenu() {
   if (app.ui?.menuContainer && !document.getElementById("comfy-image-gallery-menu-btn")) {
     const btn = document.createElement("button");
     btn.id = "comfy-image-gallery-menu-btn";
-    btn.textContent = "Image Gallery";
+    btn.textContent = "🖼️";
     btn.title = "Open Image Gallery";
     btn.onclick = openGallery;
     app.ui.menuContainer.appendChild(btn);
@@ -4160,10 +4163,6 @@ app.registerExtension({
   ],
 
   menuCommands: [
-    {
-      path: ["Extensions", "Image Gallery"],
-      commands: ["imageGallery.open", "imageGallery.buildThumbs"],
-    },
     {
       path: ["Image Gallery"],
       commands: ["imageGallery.open", "imageGallery.buildThumbs"],
