@@ -1449,7 +1449,7 @@ class ComfyCarousel extends ComfyDialog {
       mediaElement = document.createElement('video');
       mediaElement.controls = true;
       mediaElement.loop = true;
-      mediaElement.muted = true; // Start muted for better autoplay chances
+      mediaElement.muted = false; // Audio on by default
       mediaElement.playsInline = true;
       mediaElement.src = item.url;
       mediaElement.dataset.originalSrc = item.url;
