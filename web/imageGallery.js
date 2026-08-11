@@ -1,7 +1,116 @@
 // imagegallery.js
 
 import { app } from "/scripts/app.js";
-import { $el, ComfyDialog } from "/scripts/ui.js";
+
+// Modern ComfyUI API compatibility / Standalone fallback without deprecated /scripts/ui.js
+export const ComfyDialog =
+  window.comfyAPI?.dialog?.ComfyDialog ||
+  app.ui?.dialog?.ComfyDialog ||
+  class ComfyDialog {
+    constructor() {
+      this.element = $el("div.comfy-modal", {
+        parent: document.body,
+        style: {
+          display: "none",
+        },
+      });
+    }
+
+    show(html) {
+      if (typeof html === "string") {
+        this.element.innerHTML = html;
+      } else if (html) {
+        this.element.replaceChildren(html);
+      }
+      this.element.style.display = "block";
+    }
+
+    close() {
+      this.element.style.display = "none";
+    }
+  };
+
+export function $el(tagSelector, propsOrChildren, children) {
+  let tag = tagSelector;
+  let classes = [];
+  let id = null;
+
+  if (typeof tagSelector === "string") {
+    const parts = tagSelector.split(/(?=[.#])/);
+    tag = parts[0] || "div";
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+      if (part.startsWith(".")) {
+        classes.push(part.slice(1));
+      } else if (part.startsWith("#")) {
+        id = part.slice(1);
+      }
+    }
+  }
+
+  const el = document.createElement(tag);
+  if (id) el.id = id;
+  if (classes.length > 0) el.classList.add(...classes);
+
+  let actualProps = propsOrChildren;
+  let actualChildren = children;
+
+  if (
+    Array.isArray(propsOrChildren) ||
+    typeof propsOrChildren === "string" ||
+    propsOrChildren instanceof Element ||
+    propsOrChildren instanceof Node
+  ) {
+    actualChildren = propsOrChildren;
+    actualProps = null;
+  }
+
+  if (actualProps && typeof actualProps === "object") {
+    for (const [key, val] of Object.entries(actualProps)) {
+      if (val === undefined || val === null) continue;
+      if (key === "style" && typeof val === "object") {
+        Object.assign(el.style, val);
+      } else if (key === "dataset" && typeof val === "object") {
+        Object.assign(el.dataset, val);
+      } else if (key === "parent" && val instanceof Element) {
+        val.appendChild(el);
+      } else if (key.startsWith("on") && typeof val === "function") {
+        const eventName = key.slice(2).toLowerCase();
+        el.addEventListener(eventName, val);
+      } else if (key in el && key !== "list") {
+        try {
+          el[key] = val;
+        } catch (_) {
+          el.setAttribute(key, val);
+        }
+      } else {
+        el.setAttribute(key, val);
+      }
+    }
+  }
+
+  const appendChild = (child) => {
+    if (child === null || child === undefined) return;
+    if (typeof child === "string" || typeof child === "number") {
+      el.appendChild(document.createTextNode(String(child)));
+    } else if (child instanceof Node) {
+      el.appendChild(child);
+    }
+  };
+
+  if (actualChildren !== undefined && actualChildren !== null) {
+    if (Array.isArray(actualChildren)) {
+      for (const child of actualChildren) {
+        appendChild(child);
+      }
+    } else {
+      appendChild(actualChildren);
+    }
+  }
+
+  return el;
+}
+
 
 // --- CSS Styles ---
 const styles = `
@@ -3967,15 +4076,10 @@ async function addGalleryButtonToMenu() {
 
   // 1. Add to modern ComfyUI Topbar (app.menu.settingsGroup) - EXACT SAME AS Model Manager & Manager!
   if (app.menu?.settingsGroup && !window._imageGallerySettingsGroupBtnAdded) {
-    let ComfyButtonClass = window.comfyAPI?.button?.ComfyButton;
-    if (!ComfyButtonClass) {
-      try {
-        const btnModule = await import("/scripts/ui/components/button.js");
-        ComfyButtonClass = btnModule?.ComfyButton;
-      } catch (err) {
-        console.log("[ImageGallery] ComfyButton module import fallback:", err);
-      }
-    }
+    let ComfyButtonClass =
+      window.comfyAPI?.button?.ComfyButton ||
+      window.comfyAPI?.ui?.components?.button?.ComfyButton ||
+      app.ui?.button?.ComfyButton;
 
     try {
       if (ComfyButtonClass) {
