@@ -1656,7 +1656,7 @@ class ComfyCarousel extends ComfyDialog {
       console.log(`[Move Popup] Starting updatePopupView for path: '${selectedPath}'`);
       console.log(`[Move Popup]    itemsToMoveDetails count: ${itemsToMoveDetails?.length}`);
 
-      const pathSegments = selectedPath.split('/').filter(Boolean);
+      const pathSegments = (selectedPath || '').replace(/\\/g, '/').split('/').filter(Boolean);
       const homeButton = document.createElement('button');
       homeButton.className = 'breadcrumb-navigation-button';
       homeButton.textContent = 'Home';
@@ -1827,8 +1827,9 @@ class ComfyCarousel extends ComfyDialog {
           itemsToMoveDetails = Array.from(selectedElements).map(item => {
               if (item.classList.contains('folder-button')) {
                   const name = item.dataset.name;
-                  const fullPath = item.dataset.subfolder || '';
-                  const parentSubfolder = fullPath.substring(0, fullPath.lastIndexOf('/'));
+                  const fullPath = (item.dataset.subfolder || '').replace(/\\/g, '/');
+                  const lastSlash = fullPath.lastIndexOf('/');
+                  const parentSubfolder = lastSlash !== -1 ? fullPath.substring(0, lastSlash) : '';
                   return { 
                       type: 'folder', 
                       subfolder: parentSubfolder, 
@@ -2424,9 +2425,10 @@ class ComfyCarousel extends ComfyDialog {
     // Stop propagation if it's an event from a click
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
     // Determine the subfolder to load
-    const subfolder = (e && e.target && e.target.dataset.subfolder !== undefined)
+    const rawSubfolder = (e && e.target && e.target.dataset.subfolder !== undefined)
       ? e.target.dataset.subfolder
       : this.currentGallerySubfolder; // Use current if not specified by event
+    const subfolder = (rawSubfolder || '').replace(/\\/g, '/');
     const isNewFolder = subfolder !== this.currentGallerySubfolder;
     // Reset state ONLY if loading a new folder
     if (isNewFolder) {
@@ -2653,7 +2655,8 @@ class ComfyCarousel extends ComfyDialog {
           // Create folder button with SVG icon using innerHTML
           const button = document.createElement('button');
           button.className = 'folder-button';
-          button.dataset.subfolder = item.subfolder ? `${item.subfolder}/${item.name}` : item.name;
+          const normSubfolder = (item.subfolder || '').replace(/\\/g, '/');
+          button.dataset.subfolder = normSubfolder ? `${normSubfolder}/${item.name}` : item.name;
           button.dataset.name = item.name;
           button.dataset.type = 'folder';
           button.title = `Folder: ${item.name}`;
@@ -2708,7 +2711,7 @@ class ComfyCarousel extends ComfyDialog {
             container.dataset.type = item.type;
             container.dataset.url = item.url; // This is crucial
             container.dataset.filename = item.filename;
-            container.dataset.subfolder = item.subfolder || '';
+            container.dataset.subfolder = (item.subfolder || '').replace(/\\/g, '/');
             container.title = `${item.type}: ${item.filename}\nClick to view, Shift+Click to range select`;
             container.draggable = false;
             
@@ -2842,7 +2845,8 @@ class ComfyCarousel extends ComfyDialog {
 
     // Path Segments
     let pathAccumulator = '';
-    currentFolder.split('/').filter(Boolean).forEach(segment => {
+    const normalizedFolder = (currentFolder || '').replace(/\\/g, '/');
+    normalizedFolder.split('/').filter(Boolean).forEach(segment => {
       pathAccumulator += (pathAccumulator ? '/' : '') + segment;
 
       const button = document.createElement('button');
@@ -3030,8 +3034,9 @@ class ComfyCarousel extends ComfyDialog {
         const itemsToDelete = Array.from(selectedElements).map(item => {
           if (item.classList.contains('folder-button')) {
             const name = item.dataset.name;
-            const fullPath = item.dataset.subfolder || '';
-            const parentSubfolder = fullPath.substring(0, fullPath.lastIndexOf('/'));
+            const fullPath = (item.dataset.subfolder || '').replace(/\\/g, '/');
+            const lastSlash = fullPath.lastIndexOf('/');
+            const parentSubfolder = lastSlash !== -1 ? fullPath.substring(0, lastSlash) : '';
             return { type: 'folder', subfolder: parentSubfolder, name: name };
           } else if (item.classList.contains('gallery-item-container')) {
             const filename = item.dataset.filename;
@@ -3326,10 +3331,12 @@ class ComfyCarousel extends ComfyDialog {
           const itemsToMoveDetails = Array.from(selectedElements).map(item => { /* ... get details ... */
             // Ensure correct logic to get item details from the DOM elements
             if (item.classList.contains('folder-button')) {
-              const name = item.dataset.name; const fullPath = item.dataset.subfolder || '';
+              const name = item.dataset.name;
+              const fullPath = (item.dataset.subfolder || '').replace(/\\/g, '/');
               // The parentSubfolder needs to be the folder *containing* the folder being moved.
               // The dataset.subfolder on a folder button IS the full path *to* that folder.
-              const parentSubfolder = fullPath.substring(0, fullPath.lastIndexOf('/'));
+              const lastSlash = fullPath.lastIndexOf('/');
+              const parentSubfolder = lastSlash !== -1 ? fullPath.substring(0, lastSlash) : '';
                return { type: 'folder', subfolder: parentSubfolder, name: name };
             } else if (item.classList.contains('gallery-item-container')) {
               // Item container has dataset directly

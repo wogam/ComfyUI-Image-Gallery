@@ -35,6 +35,7 @@ def parse_view_url(view_url):
         filename = unquote(filename) if filename is not None else None
         dir_type = unquote(dir_type) if dir_type is not None else 'output'
         subfolder = unquote(subfolder) if subfolder is not None else ''
+        subfolder = subfolder.replace('\\', '/')
 
         return {
             'filename': filename,
@@ -49,6 +50,7 @@ def parse_view_url(view_url):
 # --- Helper: Create View URL ---
 def create_view_url(filename, dir_type, subfolder):
     """Creates the URL for the /view endpoint."""
+    subfolder = subfolder.replace('\\', '/') if subfolder else ''
     subfolder_param = quote(subfolder) if subfolder else ''
     return f"/view?filename={quote(filename)}&type={quote(dir_type)}&subfolder={subfolder_param}"
 
@@ -100,7 +102,7 @@ def get_media_metadata_from_directory(directory, base_output_dir):
 
         # Build relative path for URL
         relative_path_full = os.path.relpath(entry_path, base_output_dir)
-        relative_subfolder = os.path.dirname(relative_path_full)
+        relative_subfolder = os.path.dirname(relative_path_full).replace('\\', '/')
         if relative_subfolder == '.': relative_subfolder = ''
 
         if relative_subfolder.startswith('..'):
@@ -154,7 +156,7 @@ def get_media_metadata_from_directory(directory, base_output_dir):
 async def get_gallery_items_metadata(request):
     """Handles GET requests for minimal gallery item metadata."""
     output_dir = folder_paths.get_output_directory()
-    subfolder = request.query.get('subfolder', '')
+    subfolder = request.query.get('subfolder', '').replace('\\', '/')
 
     current_dir = os.path.normpath(os.path.join(output_dir, subfolder))
 
@@ -189,6 +191,7 @@ async def view_image(request):
     try:
         filename = unquote(filename) if filename is not None else None
         subfolder = unquote(subfolder) if subfolder is not None else ''
+        subfolder = subfolder.replace('\\', '/')
     except Exception as e:
         print(f"Error decoding URL parameters: {e}")
 
@@ -260,7 +263,7 @@ async def remove_folder(request):
         data = await request.post()
         dir_type = data.get('type', 'output')
         base_dir = folder_paths.get_directory_by_type(dir_type)
-        subfolder = data.get('subfolder', '')
+        subfolder = data.get('subfolder', '').replace('\\', '/')
         foldername = data.get('foldername')
 
         print(f"Received folder delete request: type='{dir_type}', subfolder='{subfolder}', foldername='{foldername}'")
@@ -307,7 +310,7 @@ async def remove_image(request):
         data = await request.post()
         dir_type = data.get('type', 'output')
         base_dir = folder_paths.get_directory_by_type(dir_type)
-        subfolder = data.get('subfolder', '')
+        subfolder = data.get('subfolder', '').replace('\\', '/')
         filename = data.get('filename')
 
         print(f"Received item delete request: type='{dir_type}', subfolder='{subfolder}', filename='{filename}'")
@@ -405,7 +408,7 @@ def get_items_from_directory(directory, base_output_dir):
         # --- END DEBUG PRINT ---
 
         relative_path_full = os.path.relpath(entry_path, base_output_dir)
-        relative_subfolder = os.path.dirname(relative_path_full)
+        relative_subfolder = os.path.dirname(relative_path_full).replace('\\', '/')
         if relative_subfolder == '.': relative_subfolder = ''
 
         if relative_subfolder.startswith('..'):
@@ -511,7 +514,7 @@ def get_items_from_directory(directory, base_output_dir):
 async def get_gallery_images(request):
     """Handles GET requests for gallery items with pagination."""
     output_dir = folder_paths.get_output_directory()
-    subfolder = request.query.get('subfolder', '')
+    subfolder = request.query.get('subfolder', '').replace('\\', '/')
     try:
         page = int(request.query.get('page', '1'))
         per_page = int(request.query.get('per_page', '100'))
@@ -585,7 +588,7 @@ async def move_items(request):
         data = await request.post()
         dir_type = data.get('type', 'output')
         base_dir = folder_paths.get_directory_by_type(dir_type)
-        destination_subfolder = data.get('destination', '')
+        destination_subfolder = data.get('destination', '').replace('\\', '/')
         items_json = data.get('items', '[]')
 
         print(f"Received move request: type='{dir_type}', destination='{destination_subfolder}', items='{items_json[:100]}...'")
@@ -699,7 +702,7 @@ async def create_folder(request):
         data = await request.post()
         dir_type = data.get('type', 'output')
         base_dir = folder_paths.get_directory_by_type(dir_type)
-        subfolder = data.get('subfolder', '')
+        subfolder = data.get('subfolder', '').replace('\\', '/')
         foldername = data.get('foldername')
 
         print(f"Received folder create request: type='{dir_type}', subfolder='{subfolder}', foldername='{foldername}'")
