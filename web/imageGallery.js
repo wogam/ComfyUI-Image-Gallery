@@ -2164,14 +2164,27 @@ class ComfyCarousel extends ComfyDialog {
                // Item should be visible - ensure content exists
                if (!dotImg) {
                     // --- Create and Append Image ---
+                    const isVideoExt = (u) => u && /\.(mp4|mov|webm|avi|mkv|flv|wmv|m4v)(\?.*)?$/i.test(u);
+                    let dotSrc = item.thumbnail_url;
+                    if (!dotSrc || isVideoExt(dotSrc)) {
+                        if (item.type === 'video') {
+                            dotSrc = 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'128\' height=\'128\' viewBox=\'0 0 128 128\'%3E%3Crect width=\'128\' height=\'128\' fill=\'%2318181f\' rx=\'10\'/%3E%3Ccircle cx=\'64\' cy=\'64\' r=\'24\' fill=\'%232d2d38\'/%3E%3Cpolygon points=\'58,52 76,64 58,76\' fill=\'%23a78bfa\'/%3E%3C/svg%3E';
+                        } else {
+                            dotSrc = item.url;
+                        }
+                    }
                     dotImg = document.createElement('img');
                     dotImg.className = 'dot-thumbnail';
                     dotImg.alt = `Thumbnail ${i + 1}`;
                     dotImg.dataset.index = i;
-                    dotImg.src = item.thumbnail_url || item.url; // Load the thumbnail
+                    dotImg.src = dotSrc;
                     dotImg.onerror = function () {
-                      console.warn(`Error loading thumbnail: ${this.src}`);
-                      this.src = 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'48\' height=\'48\' viewBox=\'0 0 48 48\'%3E%3Crect width=\'48\' height=\'48\' fill=\'%23555\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' dy=\'.3em\' fill=\'%23ccc\' text-anchor=\'middle\' font-size=\'10\'%3EError%3C/text%3E%3C/svg%3E';
+                      if (item.type === 'video') {
+                          this.src = 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'128\' height=\'128\' viewBox=\'0 0 128 128\'%3E%3Crect width=\'128\' height=\'128\' fill=\'%2318181f\' rx=\'10\'/%3E%3Ccircle cx=\'64\' cy=\'64\' r=\'24\' fill=\'%232d2d38\'/%3E%3Cpolygon points=\'58,52 76,64 58,76\' fill=\'%23a78bfa\'/%3E%3C/svg%3E';
+                      } else {
+                          console.warn(`Error loading thumbnail: ${this.src}`);
+                          this.src = 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'48\' height=\'48\' viewBox=\'0 0 48 48\'%3E%3Crect width=\'48\' height=\'48\' fill=\'%23555\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' dy=\'.3em\' fill=\'%23ccc\' text-anchor=\'middle\' font-size=\'10\'%3EError%3C/text%3E%3C/svg%3E';
+                      }
                     };
                     dotImg.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -2788,7 +2801,15 @@ class ComfyCarousel extends ComfyDialog {
 
           element = button;
         } else if (item.type === 'image' || item.type === 'video') {
-            const mediaSrc = item.thumbnail_url || item.url;
+            const isVideoExt = (u) => u && /\.(mp4|mov|webm|avi|mkv|flv|wmv|m4v)(\?.*)?$/i.test(u);
+            let mediaSrc = item.thumbnail_url;
+            if (!mediaSrc || isVideoExt(mediaSrc)) {
+                if (item.type === 'video') {
+                    mediaSrc = 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'128\' height=\'128\' viewBox=\'0 0 128 128\'%3E%3Crect width=\'128\' height=\'128\' fill=\'%2318181f\' rx=\'10\'/%3E%3Ccircle cx=\'64\' cy=\'64\' r=\'24\' fill=\'%232d2d38\'/%3E%3Cpolygon points=\'58,52 76,64 58,76\' fill=\'%23a78bfa\'/%3E%3C/svg%3E';
+                } else {
+                    mediaSrc = item.url;
+                }
+            }
             const img = document.createElement('img');
             img.src = mediaSrc;
             img.loading = 'lazy';
@@ -2798,9 +2819,12 @@ class ComfyCarousel extends ComfyDialog {
             
             // In your image creation code, replace the onerror handler with this robust version:
             img.onerror = function() {
-                console.warn(`Error loading thumbnail: ${this.src}`);
-                // Use properly encoded SVG fallback
-                this.src = 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'48\' height=\'48\' viewBox=\'0 0 48 48\'%3E%3Crect width=\'48\' height=\'48\' fill=\'%23555\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' dy=\'.3em\' fill=\'%23ccc\' text-anchor=\'middle\' font-size=\'10\'%3EError%3C/text%3E%3C/svg%3E';
+                if (item.type === 'video') {
+                    this.src = 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'128\' height=\'128\' viewBox=\'0 0 128 128\'%3E%3Crect width=\'128\' height=\'128\' fill=\'%2318181f\' rx=\'10\'/%3E%3Ccircle cx=\'64\' cy=\'64\' r=\'24\' fill=\'%232d2d38\'/%3E%3Cpolygon points=\'58,52 76,64 58,76\' fill=\'%23a78bfa\'/%3E%3C/svg%3E';
+                } else {
+                    console.warn(`Error loading thumbnail: ${this.src}`);
+                    this.src = 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'48\' height=\'48\' viewBox=\'0 0 48 48\'%3E%3Crect width=\'48\' height=\'48\' fill=\'%23555\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' dy=\'.3em\' fill=\'%23ccc\' text-anchor=\'middle\' font-size=\'10\'%3EError%3C/text%3E%3C/svg%3E';
+                }
                 this.style.objectFit = 'contain'; // Ensure proper display of fallback
                 this.style.backgroundColor = '#333'; // Add background for better visibility
             };

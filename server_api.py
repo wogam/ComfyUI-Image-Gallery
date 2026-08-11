@@ -2,6 +2,7 @@
 import os
 import json
 import shutil
+import subprocess
 import folder_paths
 from server import PromptServer
 from aiohttp import web
@@ -62,7 +63,7 @@ def get_media_metadata_from_directory(directory, base_output_dir):
     """
     items = []
     image_extensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
-    video_extensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv']
+    video_extensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.flv', '.wmv', '.m4v']
     dedicated_thumb_ext = '.thumb.jpeg'
 
     if not os.path.isdir(directory):
@@ -74,8 +75,6 @@ def get_media_metadata_from_directory(directory, base_output_dir):
     except Exception as e:
         print(f"Error scanning directory for metadata {directory}: {e}")
         return []
-
-    processed_bases = set() # Use set for efficient lookups
 
     for entry in entries:
         entry_name = entry.name
@@ -97,8 +96,8 @@ def get_media_metadata_from_directory(directory, base_output_dir):
             is_media = True
             item_type = "video"
 
-        if not is_media or name in processed_bases:
-            continue # Skip non-media files or already processed base names (like video + thumb)
+        if not is_media:
+            continue
 
         # Build relative path for URL
         relative_path_full = os.path.relpath(entry_path, base_output_dir)
@@ -114,40 +113,48 @@ def get_media_metadata_from_directory(directory, base_output_dir):
             "filename": entry_name,
             "subfolder": relative_subfolder,
             "url": create_view_url(entry_name, 'output', relative_subfolder),
-            "thumbnail_url": None # Will determine below
+            "thumbnail_url": None
         }
 
         # Find the associated thumbnail URL
-        thumb_name_dedicated = f"{name}{dedicated_thumb_ext}"
-        thumb_path_dedicated = os.path.join(directory, thumb_name_dedicated)
+        thumb_name_dedicated1 = f"{name}{dedicated_thumb_ext}"
+        thumb_name_dedicated2 = f"{entry_name}{dedicated_thumb_ext}"
+        thumb_path_dedicated1 = os.path.join(directory, thumb_name_dedicated1)
+        thumb_path_dedicated2 = os.path.join(directory, thumb_name_dedicated2)
 
-        if os.path.exists(thumb_path_dedicated):
-             item_data["thumbnail_url"] = create_view_url(thumb_name_dedicated, 'output', relative_subfolder)
-        else:
-             # Fallback to original URL if no dedicated thumbnail exists
+        if os.path.exists(thumb_path_dedicated1):
+             item_data["thumbnail_url"] = create_view_url(thumb_name_dedicated1, 'output', relative_subfolder)
+        elif os.path.exists(thumb_path_dedicated2):
+             item_data["thumbnail_url"] = create_view_url(thumb_name_dedicated2, 'output', relative_subfolder)
+        elif item_type == "image":
              item_data["thumbnail_url"] = item_data["url"]
-
+        else:
+             # Video without dedicated thumbnail
+             found_img_thumb = False
+             for img_ext in image_extensions:
+                 img_name = f"{name}{img_ext}"
+                 if os.path.exists(os.path.join(directory, img_name)):
+                     item_data["thumbnail_url"] = create_view_url(img_name, 'output', relative_subfolder)
+                     found_img_thumb = True
+                     break
+             if not found_img_thumb:
+                 item_data["thumbnail_url"] = None
 
         items.append(item_data)
-        processed_bases.add(name) # Mark base name as processed
-
 
     # Sort media items by modification time descending (latest first)
-    # Note: No folders in this list.
     try:
-        # Get modification times efficiently
         mod_times = {}
         for item in items:
             try:
                 full_path = os.path.join(base_output_dir, item['subfolder'], item['filename'])
                 mod_times[item['url']] = os.path.getmtime(full_path)
             except Exception:
-                mod_times[item['url']] = 0 # Handle errors gracefully
+                mod_times[item['url']] = 0
 
         items.sort(key=lambda x: -mod_times.get(x['url'], 0))
     except Exception as sort_error:
         print(f"Error sorting media metadata: {sort_error}")
-        # Continue without sorting on error
 
     return items
 
@@ -370,15 +377,8 @@ def get_items_from_directory(directory, base_output_dir):
     """
     items = []
     image_extensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
-    video_extensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv']
-    # FIX: Define dedicated_thumb_ext within this function's scope
+    video_extensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.flv', '.wmv', '.m4v']
     dedicated_thumb_ext = '.thumb.jpeg'
-
-    # --- DEBUG PRINT ---
-    print(f"Attempting to scan directory: {directory}")
-    print(f"Is directory accessible? {os.path.isdir(directory)}")
-    # --- END DEBUG PRINT ---
-
 
     if not os.path.isdir(directory):
         print(f"Warning: Directory not found or not accessible: {directory}")
@@ -386,26 +386,13 @@ def get_items_from_directory(directory, base_output_dir):
 
     try:
         entries = list(os.scandir(directory))
-
-        # --- DEBUG PRINT ---
-        print(f"Found {len(entries)} entries in {directory}")
-        # --- END DEBUG PRINT ---
-
     except Exception as e:
-        # --- DEBUG PRINT ---
         print(f"Error scanning directory {directory}: {e}")
-        # --- END DEBUG PRINT ---
         return []
-
-    processed_bases = set()
 
     for entry in entries:
         entry_name = entry.name
         entry_path = entry.path
-
-        # --- DEBUG PRINT ---
-        # print(f"Processing entry: {entry_name}")
-        # --- END DEBUG PRINT ---
 
         relative_path_full = os.path.relpath(entry_path, base_output_dir)
         relative_subfolder = os.path.dirname(relative_path_full).replace('\\', '/')
@@ -415,7 +402,6 @@ def get_items_from_directory(directory, base_output_dir):
              print(f"Warning: Skipped entry potentially outside base directory structure: {entry_path}")
              continue
 
-
         if entry.is_dir():
             items.append({
                 "type": "folder",
@@ -423,32 +409,16 @@ def get_items_from_directory(directory, base_output_dir):
                 "subfolder": relative_subfolder,
                 "modification_time": entry.stat().st_mtime
             })
-            # --- DEBUG PRINT ---
-            # print(f"Added folder: {entry_name}")
-            # --- END DEBUG PRINT ---
             continue
 
         if entry_name.endswith(dedicated_thumb_ext):
-            # --- DEBUG PRINT ---
-            # print(f"Skipped dedicated thumbnail: {entry_name}")
-            # --- END DEBUG PRINT ---
             continue
 
         name, ext = os.path.splitext(entry_name)
         ext = ext.lower()
 
         if ext not in image_extensions and ext not in video_extensions:
-            # --- DEBUG PRINT ---
-            # print(f"Skipped non-media file: {entry_name}")
-            # --- END DEBUG PRINT ---
             continue
-
-        if name in processed_bases:
-             # --- DEBUG PRINT ---
-             # print(f"Skipped file with already processed base name: {entry_name}")
-             # --- END DEBUG PRINT ---
-             continue
-
 
         item_data = {
             "type": None,
@@ -459,12 +429,18 @@ def get_items_from_directory(directory, base_output_dir):
             "thumbnail_url": None
         }
 
-        thumb_name_dedicated = f"{name}{dedicated_thumb_ext}"
-        thumb_path_dedicated = os.path.join(directory, thumb_name_dedicated)
-        has_dedicated_thumb = os.path.exists(thumb_path_dedicated)
+        thumb_name_dedicated1 = f"{name}{dedicated_thumb_ext}"
+        thumb_name_dedicated2 = f"{entry_name}{dedicated_thumb_ext}"
+        thumb_path_dedicated1 = os.path.join(directory, thumb_name_dedicated1)
+        thumb_path_dedicated2 = os.path.join(directory, thumb_name_dedicated2)
 
-        if has_dedicated_thumb:
-             item_data["thumbnail_url"] = create_view_url(thumb_name_dedicated, 'output', relative_subfolder)
+        has_dedicated_thumb = False
+        if os.path.exists(thumb_path_dedicated1):
+             item_data["thumbnail_url"] = create_view_url(thumb_name_dedicated1, 'output', relative_subfolder)
+             has_dedicated_thumb = True
+        elif os.path.exists(thumb_path_dedicated2):
+             item_data["thumbnail_url"] = create_view_url(thumb_name_dedicated2, 'output', relative_subfolder)
+             has_dedicated_thumb = True
 
         if ext in video_extensions:
             item_data["type"] = "video"
@@ -474,24 +450,14 @@ def get_items_from_directory(directory, base_output_dir):
                     img_thumb_path = os.path.join(directory, img_thumb_name)
                     if os.path.exists(img_thumb_path):
                          item_data["thumbnail_url"] = create_view_url(img_thumb_name, 'output', relative_subfolder)
-                         processed_bases.add(name)
                          break
             items.append(item_data)
-            processed_bases.add(name)
-            # --- DEBUG PRINT ---
-            # print(f"Added video item: {entry_name}")
-            # --- END DEBUG PRINT ---
 
         elif ext in image_extensions:
              item_data["type"] = "image"
              if not has_dedicated_thumb:
                  item_data["thumbnail_url"] = item_data["url"]
-
              items.append(item_data)
-             processed_bases.add(name)
-             # --- DEBUG PRINT ---
-             # print(f"Added image item: {entry_name}")
-             # --- END DEBUG PRINT ---
 
 
     # --- Sorting ---
@@ -743,37 +709,117 @@ async def create_folder(request):
 
 # --- Thumbnail Optimization Logic ---
 
-def extract_video_frame(video_path):
-    """Extracts a representative PIL Image frame from a video file."""
+def _extract_frame_cv2(video_path):
     try:
         import cv2
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
-            print(f"Warning: Could not open video file: {video_path}")
             return None
 
-        # Seek to ~0.5 seconds to avoid initial black frames
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(fps * 0.5))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
 
-        ret, frame = cap.read()
-        if not ret:
-            # Fallback to first frame if seeking fails
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        target_frame = int(fps * 0.5)
+        if frame_count > 1 and target_frame >= frame_count:
+            target_frame = max(0, frame_count // 2)
+
+        frame = None
+        ret = False
+
+        if target_frame > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+            ret, frame = cap.read()
+
+        if not ret or frame is None:
+            cap.release()
+            cap = cv2.VideoCapture(video_path)
             ret, frame = cap.read()
 
         cap.release()
 
         if ret and frame is not None:
-            # Convert OpenCV BGR array to RGB for PIL
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             return Image.fromarray(rgb_frame)
-
-    except ImportError:
-        print("Warning: opencv-python-headless is not installed. Please run 'pip install -r requirements.txt'")
     except Exception as e:
-        print(f"Error extracting frame from video {os.path.basename(video_path)}: {str(e)}")
+        print(f"OpenCV frame extraction failed for {os.path.basename(video_path)}: {e}")
+    return None
 
+def _extract_frame_ffmpeg(video_path):
+    try:
+        ffmpeg_cmd = shutil.which("ffmpeg")
+        if not ffmpeg_cmd:
+            return None
+
+        for ss in ["0.5", "0"]:
+            cmd = [
+                ffmpeg_cmd,
+                "-loglevel", "error",
+                "-ss", ss,
+                "-i", video_path,
+                "-vframes", "1",
+                "-f", "image2pipe",
+                "-vcodec", "mjpeg",
+                "-"
+            ]
+            process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+            if process.returncode == 0 and process.stdout:
+                try:
+                    img = Image.open(io.BytesIO(process.stdout))
+                    img.load()
+                    return img
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"FFmpeg frame extraction failed for {os.path.basename(video_path)}: {e}")
+    return None
+
+def _extract_frame_imageio(video_path):
+    try:
+        import imageio
+        try:
+            reader = imageio.get_reader(video_path)
+            frame = reader.get_data(0)
+            reader.close()
+            if frame is not None:
+                return Image.fromarray(frame)
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"imageio frame extraction failed for {os.path.basename(video_path)}: {e}")
+    return None
+
+def _extract_frame_pyav(video_path):
+    try:
+        import av
+        container = av.open(video_path)
+        for frame in container.decode(video=0):
+            img = frame.to_image()
+            container.close()
+            return img
+        container.close()
+    except Exception as e:
+        print(f"PyAV frame extraction failed for {os.path.basename(video_path)}: {e}")
+    return None
+
+def extract_video_frame(video_path):
+    """Extracts a representative PIL Image frame from a video file using available backends."""
+    img = _extract_frame_cv2(video_path)
+    if img:
+        return img
+
+    img = _extract_frame_ffmpeg(video_path)
+    if img:
+        return img
+
+    img = _extract_frame_imageio(video_path)
+    if img:
+        return img
+
+    img = _extract_frame_pyav(video_path)
+    if img:
+        return img
+
+    print(f"Warning: All frame extraction methods (OpenCV, FFmpeg, ImageIO, PyAV) failed for video: {os.path.basename(video_path)}. Consider running 'pip install opencv-python-headless' or installing ffmpeg.")
     return None
 
 def optimize_thumbnail(img_input, output_path, max_size=384, quality=85):
@@ -810,95 +856,105 @@ def optimize_thumbnail(img_input, output_path, max_size=384, quality=85):
 
 def process_thumbnails_in_dir(current_dir, base_dir):
     """Recursively processes thumbnails for a directory, with logging and progress bar."""
-    global is_processing_thumbnails  # Declare as global to access and modify the global variable
-    
+    global is_processing_thumbnails
+
     thumb_size = (384, 384)
     image_extensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif']
-    video_extensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv']
+    video_extensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.flv', '.wmv', '.m4v']
     dedicated_thumb_ext = '.thumb.jpeg'
 
     print(f"Processing thumbnails in: {current_dir}")
 
     if not os.path.isdir(current_dir):
         print(f"Skipping non-directory: {current_dir}")
-        is_processing_thumbnails = False  # Reset flag
+        is_processing_thumbnails = False
         return
 
     try:
-        # First, collect all items to process for counting
         files_to_process = []
         def collect_files(dir_path):
-            entries = os.scandir(dir_path)
+            try:
+                entries = list(os.scandir(dir_path))
+            except Exception as e:
+                print(f"Warning: Could not scan directory {dir_path}: {e}")
+                return
+
             for entry in entries:
-                if entry.is_dir():
-                    collect_files(entry.path)  # Recurse into subdirs
-                elif entry.is_file() and not entry.name.endswith(dedicated_thumb_ext):
-                    name, ext = os.path.splitext(entry.name)
-                    ext = ext.lower()
-                    if ext in image_extensions or ext in video_extensions:
-                        files_to_process.append(entry.path)  # Add to list
+                try:
+                    if entry.is_dir():
+                        collect_files(entry.path)
+                    elif entry.is_file() and not entry.name.endswith(dedicated_thumb_ext):
+                        name, ext = os.path.splitext(entry.name)
+                        ext = ext.lower()
+                        if ext in image_extensions or ext in video_extensions:
+                            files_to_process.append(entry.path)
+                except Exception as entry_e:
+                    print(f"Warning: Error processing entry {entry.name} in {dir_path}: {entry_e}")
 
         collect_files(current_dir)
         total_items = len(files_to_process)
-        print(f"Total items to process: {total_items}")  # Log the number of items
+        print(f"Total items to process: {total_items}")
 
         if total_items == 0:
             print("No items found to process.")
             is_processing_thumbnails = False
             return
 
-        # Now process with progress bar
+        success_count = 0
+        skipped_count = 0
+        failed_count = 0
+
         for file_path in tqdm(files_to_process, desc="Processing thumbnails", unit="item", ncols=80):
             name, ext = os.path.splitext(os.path.basename(file_path))
-            ext = ext.lower() # Ensure extension is lowercase for comparison
+            ext = ext.lower()
             thumb_path_dedicated = os.path.join(os.path.dirname(file_path), f"{name}{dedicated_thumb_ext}")
 
-            # Check if a dedicated thumbnail already exists - if so, skip
             if os.path.exists(thumb_path_dedicated):
-                # print(f"Skipping {os.path.basename(file_path)} - dedicated thumbnail already exists.") # Optional: add logging for skipped files
+                skipped_count += 1
                 continue
 
             if ext in image_extensions:
                 if ext == '.gif':
-                    # Special handling for GIF: extract the first frame
                     try:
                         with Image.open(file_path) as img:
-                            # PIL Image object automatically loads the first frame
-                            # Pass this Image object to optimize_thumbnail
-                            optimize_thumbnail(img, thumb_path_dedicated, max_size=thumb_size[0])
-                            # print(f"Generated thumbnail for GIF: {os.path.basename(file_path)}") # Optional logging
+                            if optimize_thumbnail(img, thumb_path_dedicated, max_size=thumb_size[0]):
+                                success_count += 1
+                            else:
+                                failed_count += 1
                     except Exception as e:
                         print(f"Error processing GIF thumbnail for {os.path.basename(file_path)}: {str(e)}")
+                        failed_count += 1
                 else:
-                    # Standard image file (png, jpg, webp) - process directly from path
-                    optimize_thumbnail(file_path, thumb_path_dedicated, max_size=thumb_size[0])
-                    # print(f"Generated thumbnail for image: {os.path.basename(file_path)}") # Optional logging
+                    if optimize_thumbnail(file_path, thumb_path_dedicated, max_size=thumb_size[0]):
+                        success_count += 1
+                    else:
+                        failed_count += 1
 
             elif ext in video_extensions:
-                # Keep existing video logic: check for original image thumbnail first
-                found_original_thumb_path = None
-                for thumb_ext_check in image_extensions: # This now includes .gif, but we'll skip processing .gif originals here
-                    if thumb_ext_check == '.gif': continue # Skip trying to use a .gif as an original thumbnail source
-                    potential_thumb_path = os.path.join(os.path.dirname(file_path), f"{name}{thumb_ext_check}")
-                    if os.path.exists(potential_thumb_path):
-                        found_original_thumb_path = potential_thumb_path
-                        break
-                if found_original_thumb_path:
-                    # Process the found image thumbnail for the video
-                    optimize_thumbnail(found_original_thumb_path, thumb_path_dedicated, max_size=thumb_size[0])
-                    # Optionally remove the original if it's not a video (e.g., an old .png thumb)
-                    if os.path.splitext(found_original_thumb_path)[1].lower() not in video_extensions:
-                        try:
-                            os.remove(found_original_thumb_path)
-                        except Exception as e_remove:
-                            print(f"Error removing old thumbnail {os.path.basename(found_original_thumb_path)}: {str(e_remove)}")
+                frame_img = extract_video_frame(file_path)
+                if frame_img:
+                    if optimize_thumbnail(frame_img, thumb_path_dedicated, max_size=thumb_size[0]):
+                        success_count += 1
+                    else:
+                        failed_count += 1
                 else:
-                    # Extract frame directly from the video file
-                    frame_img = extract_video_frame(file_path)
-                    if frame_img:
-                        optimize_thumbnail(frame_img, thumb_path_dedicated, max_size=thumb_size[0])
+                    found_original_thumb_path = None
+                    for thumb_ext_check in image_extensions:
+                        if thumb_ext_check == '.gif': continue
+                        potential_thumb_path = os.path.join(os.path.dirname(file_path), f"{name}{thumb_ext_check}")
+                        if os.path.exists(potential_thumb_path):
+                            found_original_thumb_path = potential_thumb_path
+                            break
+                    if found_original_thumb_path:
+                        if optimize_thumbnail(found_original_thumb_path, thumb_path_dedicated, max_size=thumb_size[0]):
+                            success_count += 1
+                        else:
+                            failed_count += 1
+                    else:
+                        print(f"Failed to generate thumbnail for video: {os.path.basename(file_path)}")
+                        failed_count += 1
 
-        print("Thumbnail processing completed.")
+        print(f"Thumbnail processing completed: {success_count} generated, {skipped_count} skipped (already exist), {failed_count} failed.")
     except Exception as e:
         print(f"Error during thumbnail processing: {str(e)}")
     finally:
