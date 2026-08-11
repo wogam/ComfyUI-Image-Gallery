@@ -1,0 +1,4 @@
+aiohttp
+opencv-python-headless
+Pillow
+tqdm
