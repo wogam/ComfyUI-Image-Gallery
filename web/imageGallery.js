@@ -2,6 +2,29 @@
 
 import { app } from "/scripts/app.js";
 
+export function stopVideoElement(video) {
+  if (!video) return;
+  try {
+    video._autoplayCancelled = true;
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+  } catch (e) {
+    console.debug("[Gallery] Error stopping video:", e);
+  }
+}
+
+export function stopAllVideos(container) {
+  if (!container) return;
+  if (container.tagName === 'VIDEO') {
+    stopVideoElement(container);
+    return;
+  }
+  if (typeof container.querySelectorAll === 'function') {
+    container.querySelectorAll('video').forEach(stopVideoElement);
+  }
+}
+
 // Modern ComfyUI API compatibility / Standalone fallback without deprecated /scripts/ui.js
 export const ComfyDialog =
   window.comfyAPI?.dialog?.ComfyDialog ||
@@ -26,6 +49,7 @@ export const ComfyDialog =
     }
 
     close() {
+      stopAllVideos(this.element);
       this.element.style.display = "none";
     }
   };
@@ -1533,8 +1557,7 @@ class ComfyCarousel extends ComfyDialog {
     // Pause video on previously active slide
     const currentActiveSlideElement = this.slideContainer.querySelector('.slide-container.shown');
     if (currentActiveSlideElement) {
-        const video = currentActiveSlideElement.querySelector('video');
-        if (video && !video.paused) video.pause();
+        stopAllVideos(currentActiveSlideElement);
     }
   
     // Update the active index
@@ -1624,11 +1647,16 @@ class ComfyCarousel extends ComfyDialog {
   updateSlideDisplay(index) {
       if (!this.slideContainer || this.allLargeViewItemsData.length === 0 || index < 0 || index >= this.allLargeViewItemsData.length) {
          // Clear slides display if no items or invalid index
-         if(this.slideContainer) this.slideContainer.innerHTML = '<div class="no-images">No items to display.</div>';
+         if(this.slideContainer) {
+           stopAllVideos(this.slideContainer);
+           this.slideContainer.innerHTML = '<div class="no-images">No items to display.</div>';
+         }
          return;
       }
       const item = this.allLargeViewItemsData[index];
   
+      // Stop and clean up any existing videos before clearing
+      stopAllVideos(this.slideContainer);
       // Clear previous slides
       this.slideContainer.innerHTML = '';
   
@@ -1641,14 +1669,23 @@ class ComfyCarousel extends ComfyDialog {
        // Attempt to autoplay video if it's the selected slide
        const mediaElement = slideContainerElement.querySelector('img, video');
        if (mediaElement && mediaElement.tagName === 'VIDEO') {
+         const tryAutoplay = () => {
+           // Guard against playing if cancelled, detached, or dialog is closing/hidden
+           if (mediaElement._autoplayCancelled) return;
+           if (!mediaElement.isConnected) return;
+           if (!slideContainerElement.classList.contains('shown')) return;
+           if (!this.element.classList.contains('show') || this.element.classList.contains('hide')) return;
+
+           mediaElement.play().catch(e => console.debug("Autoplay prevented/interrupted:", e));
+         };
+
          // Check if video is already loaded and ready before trying to play
          if (mediaElement.readyState >= 3) { // Enough data to play
-             mediaElement.play().catch(e => console.debug("Autoplay prevented/interrupted:", e));
+             tryAutoplay();
          } else {
              // Wait for 'canplaythrough' or 'loadeddata' event
-             mediaElement.addEventListener('canplaythrough', () => {
-                 mediaElement.play().catch(e => console.debug("Autoplay prevented/interrupted (event):", e));
-             }, { once: true });
+             mediaElement.addEventListener('canplaythrough', tryAutoplay, { once: true });
+             mediaElement.addEventListener('loadeddata', tryAutoplay, { once: true });
          }
        }
   }
@@ -2297,6 +2334,7 @@ class ComfyCarousel extends ComfyDialog {
   // --- Carousel Setup (Large View) ---
   // Remove the 'pagination' parameter, it's no longer used here
   setupCarousel(allItems, activeIndex) {
+    stopAllVideos(this.element);
     this.element.innerHTML = ''; // Clear existing content
     this.allLargeViewItemsData = allItems; // Store the full list
     // This activeIndex is the index within the *full* list
@@ -2927,6 +2965,7 @@ class ComfyCarousel extends ComfyDialog {
     }
   }
   clearGalleryView() {
+    stopAllVideos(this.element);
     const galleryHeaderWrapper = this.element.querySelector('.gallery-header-wrapper');
     const galleryContainer = this.element.querySelector('.gallery-container');
     const sizeSlider = this.element.querySelector('.gallery-size-slider');
@@ -3706,10 +3745,9 @@ class ComfyCarousel extends ComfyDialog {
     const carouselBox = this.element.querySelector('.comfy-carousel-box');
     if (carouselBox) {
       carouselBox.classList.add('large-view-hidden');
-      // Pause any active videos
-      const activeVideo = carouselBox.querySelector('video:not([paused])');
-      if (activeVideo) activeVideo.pause();
     }
+    // Pause and stop any active videos
+    stopAllVideos(this.element);
 
     // 2. Determine the subfolder we intend to show
     // If targetSubfolder is null, use the last viewed gallery subfolder, or default to root ('')
@@ -4073,6 +4111,9 @@ class ComfyCarousel extends ComfyDialog {
   // Inside ComfyCarousel class
   // --- Modified close method ---
   close() {
+    // Immediately stop all video playback and audio buffering
+    stopAllVideos(this.element);
+
     // Just hide everything rather than removing
     this.element.querySelectorAll('.comfy-carousel-box, .gallery-container').forEach(el => {
       el.classList.add('large-view-hidden');
@@ -4123,7 +4164,10 @@ class ComfyCarousel extends ComfyDialog {
     // Use 'transitionend' event for more robust clearing after animation,
     // or just a setTimeout matching the CSS transition duration.
     setTimeout(() => {
-         if (this.element) this.element.innerHTML = '';
+         if (this.element) {
+           stopAllVideos(this.element);
+           this.element.innerHTML = '';
+         }
     }, 300); // Match CSS animation duration
   }
 
